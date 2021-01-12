@@ -1,19 +1,19 @@
-var myVersion = "0.9.17", myProductName = "nodeStorage";   
+var myVersion = "0.9.17", myProductName = "nodeStorage";
 
-/* The MIT License (MIT) 
-	
+/* The MIT License (MIT)
+
 	Copyright (c) 2014-2020 Dave Winer
-	
+
 	Permission is hereby granted, free of charge, to any person obtaining a copy
 	of this software and associated documentation files (the "Software"), to deal
 	in the Software without restriction, including without limitation the rights
 	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 	copies of the Software, and to permit persons to whom the Software is
 	furnished to do so, subject to the following conditions:
-	
+
 	The above copyright notice and this permission notice shall be included in all
 	copies or substantial portions of the Software.
-	
+
 	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -21,13 +21,13 @@ var myVersion = "0.9.17", myProductName = "nodeStorage";
 	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 	SOFTWARE.
-	
+
 	structured listing: http://scripting.com/listings/storage.html
 	*/
 
 exports.startup = startup;
 
-var http = require ("http"); 
+var http = require ("http");
 var urlpack = require ("url");
 var twitterAPI = require ("node-twitter-api");
 var websocket = require ("nodejs-websocket"); //11/11/15 by DW
@@ -49,17 +49,17 @@ var zip = require ("davezip"); //4/13/20 by DW
 
 //environment variables
 	var myPort = process.env.PORT;
-	var flEnabled = process.env.enabled; 
+	var flEnabled = process.env.enabled;
 	var s3Path = process.env.s3Path; //where we store publicly accessible data, user files, logs
 	var s3PrivatePath = process.env.s3PrivatePath; //where we store private stuff, user's prefs for example
 	var twitterConsumerKey = process.env.twitterConsumerKey;  //5/8/15 by DW
 	var twitterConsumerSecret = process.env.twitterConsumerSecret; //5/8/15 by DW
 	var myDomain = process.env.myDomain;  //5/8/15 by DW
-	
+
 	var urlWhitelist = process.env.urlUserWhitelist; //5/8/15 by DW
 	var bitlyApiKey = process.env.bitlyApiKey;
 	var bitlyApiUsername = process.env.bitlyApiUsername;
-	var longPollTimeoutSecs = process.env.longPollTimeoutSecs; 
+	var longPollTimeoutSecs = process.env.longPollTimeoutSecs;
 	var flLocalFilesystem = false; //7/28/15 DW
 	var basePublicUrl = undefined; //7/29/15 by DW
 	var flForceTwitterLogin = false; //2/19/16 by DW
@@ -69,12 +69,12 @@ var fnameConfig = "config.json"; //config, another way of setting environment va
 var serverStats = {
 	today: new Date (),
 	ctStatsSaves: 0,
-	ctHits: 0, 
+	ctHits: 0,
 	ctHitsThisRun: 0,
 	ctHitsToday: 0,
-	ctTweets: 0, 
+	ctTweets: 0,
 	ctTweetsThisRun: 0,
-	ctTweetsToday: 0, 
+	ctTweetsToday: 0,
 	ctTweetErrors: 0,
 	whenServerStart: 0,
 	ctHoursServerUp: 0,
@@ -91,15 +91,15 @@ var serverStats = {
 	ctChatPosts: 0, //8/25/15 by DW
 	ctChatPostsToday: 0, //8/29/15 by DW
 	whenLastChatPost: new Date (0), //8/25/15 by DW
-	
+
 	chatLogStats: { //1/20/16 by DW
 		logStats: new Object () //one for each chatlog
 		},
-	
-	
+
+
 	recentTweets: []
 	};
-var fnameStats = "data/serverStats.json", flStatsDirty = false, maxrecentTweets = 500; 
+var fnameStats = "data/serverStats.json", flStatsDirty = false, maxrecentTweets = 500;
 var s3RssPath = "rss.xml"; //10/6/15 by DW
 
 
@@ -111,7 +111,7 @@ var fnameTweetsFolder = "data/tweets/";
 var userDomain = undefined; //7/13/15 by DW
 
 var requestTokens = []; //used in the OAuth dance
-var screenNameCache = []; 
+var screenNameCache = [];
 
 var flWatchAppDateChange = false, fnameApp = "storage.js", origAppModDate; //8/26/15 by DW -- can only be sent through config.json
 var domainIncomingWebhook; //8/28/15 by DW
@@ -139,7 +139,7 @@ var flUsePortInRedirect = true; //2/27/18 by DW
 function httpReadUrl (url, callback) {
 	request (url, function (error, response, body) {
 		if (!error && (response.statusCode == 200)) {
-			callback (body) 
+			callback (body)
 			}
 		});
 	}
@@ -163,7 +163,7 @@ function httpReadUrl (url, callback) {
 		}
 //whitelist -- 11/18/14 by DW
 	var userWhitelist = [], flWhitelist = false;
-	
+
 	function readUserWhitelist (callback) {
 		if ((urlWhitelist !== undefined) && (urlWhitelist.length > 0)) {
 			httpReadUrl (urlWhitelist, function (s) {
@@ -198,11 +198,11 @@ function httpReadUrl (url, callback) {
 			return (true);
 			}
 		}
-	
-	
+
+
 //long polling -- 12/15/14 by DW
 	var waitingLongpolls = new Array ();
-	
+
 	function getLongpollTimeout () {
 		if (longPollTimeoutSecs == undefined) { //the environment variable wasn't defined
 			return (60000); //60 seconds
@@ -220,7 +220,7 @@ function httpReadUrl (url, callback) {
 			client: clientIpAddress,
 			response: httpResponse
 			}
-		serverStats.ctLongPollPushes++; 
+		serverStats.ctLongPollPushes++;
 		serverStats.ctLongPollsToday++;
 		flStatsDirty = true;
 		}
@@ -230,10 +230,10 @@ function httpReadUrl (url, callback) {
 			var obj = waitingLongpolls [i];
 			if (now >= obj.whenTimeout) {
 				obj.response.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-				obj.response.end ("timeout");    
+				obj.response.end ("timeout");
 				waitingLongpolls.splice (i, 1);
-				serverStats.ctLongPollPops++; 
-				serverStats.ctLongPollTimeouts++; 
+				serverStats.ctLongPollPops++;
+				serverStats.ctLongPollTimeouts++;
 				flStatsDirty = true;
 				}
 			}
@@ -245,23 +245,23 @@ function httpReadUrl (url, callback) {
 			if (obj.url == url) {
 				console.log ("Request #" + i + " is returning because the resource updated.");
 				obj.response.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-				obj.response.end ("update\r" + filetext);    
+				obj.response.end ("update\r" + filetext);
 				waitingLongpolls.splice (i, 1);
-				serverStats.ctLongPollPops++; 
-				serverStats.ctLongPollUpdates++; 
+				serverStats.ctLongPollPops++;
+				serverStats.ctLongPollUpdates++;
 				flStatsDirty = true;
 				}
 			}
 		checkWebSocketCallsForUrl (url, filetext); //11/11/15 by DW
 		}
-	
-	
+
+
 //websockets rewrite -- 11/29/15 by DW
 	var theWsServer;
-	
+
 	function checkWebSocketCalls () { //expire timed-out calls
 		}
-	function checkWebSocketCallsForUrl (url, filetext) { 
+	function checkWebSocketCallsForUrl (url, filetext) {
 		if (theWsServer !== undefined) {
 			var ctUpdates = 0;
 			for (var i = 0; i < theWsServer.connections.length; i++) {
@@ -284,20 +284,20 @@ function httpReadUrl (url, callback) {
 				}
 			}
 		}
-	function handleWebSocketConnection (conn) { 
+	function handleWebSocketConnection (conn) {
 		var now = new Date ();
-		
+
 		function logToConsole (conn, verb, value) {
 			getDomainName (conn.socket.remoteAddress, function (theName) { //log the request
-				var freemem = gigabyteString (os.freemem ()), method = "WS:" + verb, now = new Date (); 
+				var freemem = gigabyteString (os.freemem ()), method = "WS:" + verb, now = new Date ();
 				if (theName === undefined) {
 					theName = conn.socket.remoteAddress;
 					}
 				console.log (now.toLocaleTimeString () + " " + freemem + " " + method + " " + value + " " + theName);
-				conn.chatLogData.domain = theName; 
+				conn.chatLogData.domain = theName;
 				});
 			}
-		
+
 		conn.chatLogData = {
 			whenStarted: now
 			};
@@ -358,7 +358,7 @@ function httpReadUrl (url, callback) {
 		}
 //blocking -- 11/9/14 by DW
 	function tweetContainsBlockedTag (twitterStatus) { //blocking is not present in this version -- 12/16/14 by DW
-		return (false); 
+		return (false);
 		}
 //stats & prefs -- 1/15/15 by DW
 	function statsChanged () {
@@ -370,7 +370,7 @@ function httpReadUrl (url, callback) {
 				if (data != null) {
 					try {
 						var oldStruct = JSON.parse (data.Body);
-						for (var x in oldStruct) { 
+						for (var x in oldStruct) {
 							struct [x] = oldStruct [x];
 							}
 						}
@@ -407,7 +407,7 @@ function httpReadUrl (url, callback) {
 		serverStats.ctStatsSaves++; //1/30/15 by DW
 		serverStats.ctHoursServerUp = utils.secondsSince (serverStats.whenServerStart) / 3600; //4/28/14 by DW
 		serverStats.ctCurrentLongPolls = waitingLongpolls.length; //12/16/14 by DW
-		
+
 		//add info about current longPolls -- 1/29/15 by DW
 			serverStats.currentLogPolls = new Array ();
 			for (var i = 0; i < waitingLongpolls.length; i++) {
@@ -417,7 +417,7 @@ function httpReadUrl (url, callback) {
 					client: obj.client
 					};
 				}
-		
+
 		saveStruct (fnameStats, serverStats);
 		}
 	function loadServerPrefs (callback) {
@@ -446,11 +446,11 @@ function httpReadUrl (url, callback) {
 	var maxLogLengthForClient = 50; //we won't return more than this number of log items to the client
 	var flChatLogDirty = false, nameDirtyChatLog;
 	var chatLogArray = new Array (); //10/26/15 by DW
-	
+
 	function initChatLogStats (name) { //1/20/16 by DW
 		if (serverStats.chatLogStats.logStats [name] === undefined) {
 			serverStats.chatLogStats.logStats [name] = {
-				ctReads: 0, whenLastRead: new Date (0), 
+				ctReads: 0, whenLastRead: new Date (0),
 				ctWrites: 0, whenLastWrite: new Date (0)
 				};
 			}
@@ -458,7 +458,7 @@ function httpReadUrl (url, callback) {
 		}
 	function getAnyoneCanReply (theLog) {
 		if (theLog.version == 2) {
-			if (theLog.renderingPrefs !== undefined) { 
+			if (theLog.renderingPrefs !== undefined) {
 				if (theLog.renderingPrefs.flAnyoneCanReply !== undefined) { //owner has explicitly set it true or false
 					return (utils.getBoolean (theLog.renderingPrefs.flAnyoneCanReply));
 					}
@@ -482,7 +482,7 @@ function httpReadUrl (url, callback) {
 			}
 		return ({
 			prefs: log.prefs,
-			usersWhoCanPost: log.usersWhoCanPost, 
+			usersWhoCanPost: log.usersWhoCanPost,
 			flAnyoneCanReply: flAnyoneCanReply, //11/20/15 by DW
 			urlPublicFolder: log.urlPublicFolder,
 			urlRssFeed: log.urlPublicFolder + s3RssPath, //11/22/15 by DW
@@ -511,7 +511,7 @@ function httpReadUrl (url, callback) {
 				"rssCloudProtocol": "http-post",
 				"flInstantArticlesSupport": true //4/6/16 by DW
 				},
-			renderingPrefs: { 
+			renderingPrefs: {
 				siteName: nameChatLog,
 				authorFacebookAccount: "",
 				authorGithubAccount: "",
@@ -538,59 +538,60 @@ function httpReadUrl (url, callback) {
 			var flprivate = false; //3/9/16 by DW
 			var chatlogpath = getS3UsersPath (flprivate) + screenName + "/chatLog.json";
 			var whenStartLoad = new Date ();
+			console.log(chatlogpath);
 			store.getObject (chatlogpath, function (error, data) {
 				var chatlogstruct = getInitialChatLogStruct (screenName);
-				
+
 				if ((!error) && (data != null)) {
 					try {
 						chatlogstruct = JSON.parse (data.Body);
-						console.log ("openUserChatlog: chatlog for " + screenName + " has been opened."); 
+						console.log ("openUserChatlog: chatlog for " + screenName + " has been opened.");
 						}
 					catch (err) {
-						console.log ("openUserChatlog: error opening chatlog for " + screenName + "."); 
+						console.log ("openUserChatlog: error opening chatlog for " + screenName + ".");
 						callback (undefined); //1/19/16 by DW
 						}
 					}
 				else {
-					console.log ("openUserChatlog: the chatlog for " + screenName + " does not exist."); 
-					callback (undefined); //1/19/16 by DW
+					console.log ("openUserChatlog: the chatlog for " + screenName + " does not exist.");
+					// callback (undefined); //1/19/16 by DW
 					}
-				
+
 				chatlogstruct.name = screenName;
 				chatlogstruct.jsonPath = chatlogpath;
-				
+
 				chatlogstruct.s3Path = getS3UsersPath (false) + screenName + "/"; //where the chatlog's public files, such as the RSS feed, are stored
-				
+
 				if (urlPublicFolder !== undefined) { //2/19/16 by DW
 					chatlogstruct.urlPublicFolder = urlPublicFolder + "users/" + screenName + "/";
 					}
 				if (chatlogstruct.usersWhoCanPost === undefined) { //3/3/16 by DW
 					chatlogstruct.usersWhoCanPost = [screenName];
 					}
-				
+
 				chatlogstruct.flDirty = false; //5/12/16 by DW -- prevent the RSS file from being rebuilt every time the file is opened
-				
+
 				chatLogArray [chatLogArray.length] = chatlogstruct;
-				
+
 				//stats -- 1/20/16 by DW
 					var myStats = initChatLogStats (screenName);
 					myStats.ctSecsLastRead = utils.secondsSince (whenStartLoad); //1/20/16 by DW
 					myStats.ctReads++;
 					myStats.whenLastRead = whenStartLoad;
 					flStatsDirty = true;
-					
+
 					console.log ("openUserChatlog: screenName == " + screenName + ", stats == " + utils.jsonStringify (myStats));
-				
+
 				callback (getChatLogSubset (chatlogstruct));
 				});
 			}
 		}
 	function newUserChatlog (screenName, callback) { //3/15/16 by DW
-		var jstruct = getInitialChatLogStruct (screenName); 
+		var jstruct = getInitialChatLogStruct (screenName);
 		jstruct.name = screenName;
 		jstruct.jsonPath = getS3UsersPath (false) + screenName + "/chatLog.json";
 		jstruct.s3Path = getS3UsersPath (false) + screenName + "/"; //where the chatlog's public files, such as the RSS feed, are stored
-		if (urlPublicFolder !== undefined) { 
+		if (urlPublicFolder !== undefined) {
 			jstruct.urlPublicFolder = urlPublicFolder + "users/" + screenName + "/";
 			}
 		jstruct.usersWhoCanPost = [screenName];
@@ -598,7 +599,7 @@ function httpReadUrl (url, callback) {
 		callback (getChatLogSubset (jstruct));
 		}
 	function openAllUserChatlogs (callback) { //3/2/16 by DW
-		function getUsersWhoHaveChatLogs (flprivate, callback) { //3/2/16 by DW 
+		function getUsersWhoHaveChatLogs (flprivate, callback) { //3/2/16 by DW
 			var theList = new Array (), usersPath = getS3UsersPath (flprivate);
 			store.listObjects (usersPath, function (obj) { //loop over all the users' folders
 				if (obj.flLastObject != undefined) {
@@ -618,9 +619,9 @@ function httpReadUrl (url, callback) {
 			}
 		if (flChatEnabled) {
 			getUsersWhoHaveChatLogs (false, function (theList) {
-				
+
 				console.log ("openAllUserChatlogs: theList == " + utils.jsonStringify (theList));
-				
+
 				function openlog (ix) {
 					if (ix >= theList.length) {
 						if (callback !== undefined) {
@@ -679,7 +680,7 @@ function httpReadUrl (url, callback) {
 		}
 	function bumpChatUpdateCount (item) { //10/18/15 by DW
 		item.whenLastUpdate = new Date ();
-		if (item.ctUpdates === undefined) { 
+		if (item.ctUpdates === undefined) {
 			item.ctUpdates = 1;
 			}
 		else {
@@ -689,7 +690,7 @@ function httpReadUrl (url, callback) {
 	function getItemFile (item) { //10/5/15 by DW
 		return (utils.getDatePath (item.when) + utils.padWithZeros (item.id, 4) + ".json");
 		}
-	function saveChatMessage (nameChatLog, item, callback) { 
+	function saveChatMessage (nameChatLog, item, callback) {
 		var theLog = findChatLog (nameChatLog), jsontext = utils.jsonStringify (item), relpath = getItemFile (item);
 		var path = theLog.s3Path + relpath;
 		store.newObject (path, jsontext, "application/json", undefined, function () {
@@ -710,7 +711,7 @@ function httpReadUrl (url, callback) {
 					callback ();
 					}
 				}
-			
+
 			callbacks.callPublishCallbacks (relpath, jsontext, "application/json", nameChatLog); //4/17/16 by DW
 			});
 		}
@@ -760,12 +761,12 @@ function httpReadUrl (url, callback) {
 			}
 		return (countInArray (theLog.chatLog));
 		}
-	function releaseChatLongpolls (nameChatLog, itemToReturn) { //anyone  waiting for "chatlog:xxx" to update will be notified 
+	function releaseChatLongpolls (nameChatLog, itemToReturn) { //anyone  waiting for "chatlog:xxx" to update will be notified
 		var flDeleteName = itemToReturn.chatLog === undefined;
 		itemToReturn.chatLog = nameChatLog;
 		jsontext = utils.jsonStringify (itemToReturn);
 		delete itemToReturn.chatLog;
-		checkLongpollsForUrl ("chatlog:" + nameChatLog, jsontext); 
+		checkLongpollsForUrl ("chatlog:" + nameChatLog, jsontext);
 		}
 	function okToPostToChatLog (nameChatLog, screenName, flReply) { //10/29/15 by DW
 		var theLog = findChatLog (nameChatLog), lowername = utils.stringLower (screenName);
@@ -776,11 +777,11 @@ function httpReadUrl (url, callback) {
 					}
 				}
 			}
-		
+
 		if (flReply && getAnyoneCanReply (theLog)) { //3/1/16 by DW
 			return (true);
 			}
-		
+
 		return (false);
 		}
 	function okToModerate (screenName) { //11/30/15 by DW
@@ -804,11 +805,11 @@ function httpReadUrl (url, callback) {
 		}
 	function postChatMessage (screenName, nameChatLog, chatText, payload, idMsgReplyingTo, iconUrl, iconEmoji, flTwitterName, callback) {
 		var flReply = idMsgReplyingTo !== undefined;
-		
+
 		if (okToPostToChatLog (nameChatLog, screenName, flReply)) {
 			var theLog = findChatLog (nameChatLog);
 			var now = new Date (), idChatPost, itemToReturn;
-			
+
 			var chatItem = {
 				name: screenName,
 				text: chatText,
@@ -834,7 +835,7 @@ function httpReadUrl (url, callback) {
 			if (!flTwitterName) {
 				chatItem.flNotTwitterName = !flTwitterName; //the "name" field of struct is not a twitter screen name
 				}
-			
+
 			if (flReply) {
 				findChatMessage (nameChatLog, idMsgReplyingTo, function (flFound, item, subs, theTopItem) {
 					if (flFound) {
@@ -848,7 +849,7 @@ function httpReadUrl (url, callback) {
 						callback ("Can't reply to the message because it isn't in the server chat log.", undefined);
 						}
 					});
-				
+
 				}
 			else {
 				if (theLog.chatLog.length >= maxChatLog) {
@@ -857,20 +858,20 @@ function httpReadUrl (url, callback) {
 				theLog.chatLog [theLog.chatLog.length] = chatItem;
 				itemToReturn = chatItem;
 				}
-			
+
 			callback (undefined, chatItem.id, itemToReturn); //pass it the id of the new post, and (11/26/15, the item we'll return via WebSockets)
-			
-			if (!utils.sameDay (serverStats.whenLastChatPost, now)) { 
+
+			if (!utils.sameDay (serverStats.whenLastChatPost, now)) {
 				serverStats.ctChatPostsToday = 0;
 				}
 			serverStats.whenLastChatPost = now;
 			serverStats.ctChatPostsToday++;
 			flStatsDirty = true;
-			
-			
+
+
 			chatLogChanged (nameChatLog);
 			saveChatMessage (nameChatLog, itemToReturn, function () {
-				releaseChatLongpolls (nameChatLog, itemToReturn); 
+				releaseChatLongpolls (nameChatLog, itemToReturn);
 				if (itemToReturn.idLatestReply !== undefined) { //9/22/15 by DW
 					delete itemToReturn.idLatestReply;
 					}
@@ -897,7 +898,7 @@ function httpReadUrl (url, callback) {
 							}
 						}
 					bumpChatUpdateCount (item); //10/18/15 by DW
-					releaseChatLongpolls (nameChatLog, theTopItem); 
+					releaseChatLongpolls (nameChatLog, theTopItem);
 					saveChatMessage (nameChatLog, theTopItem); //10/8/15 by DW
 					chatLogChanged (nameChatLog);
 					callback (undefined, "We were able to update the post.", theTopItem);
@@ -912,7 +913,7 @@ function httpReadUrl (url, callback) {
 				callback ({message: theErrorString});
 				}
 			});
-		
+
 		}
 	function likeChatMessage (screenName, nameChatLog, idToLike, callback) { //9/27/15 by DW
 		var now = new Date ();
@@ -934,10 +935,10 @@ function httpReadUrl (url, callback) {
 				bumpChatUpdateCount (item); //10/18/15 by DW
 				chatLogChanged (nameChatLog);
 				callback (fl); //return true if we liked, false if we unliked
-				releaseChatLongpolls (nameChatLog, theTopItem); 
+				releaseChatLongpolls (nameChatLog, theTopItem);
 				saveChatMessage (nameChatLog, theTopItem); //10/8/15 by DW
 				if (fl) { //only call callbacks on like, not unlike -- 4/24/16 by DW
-					callbacks.callLikeCallbacks (screenName, nameChatLog, item); 
+					callbacks.callLikeCallbacks (screenName, nameChatLog, item);
 					}
 				}
 			else {
@@ -970,7 +971,7 @@ function httpReadUrl (url, callback) {
 		if (theLog === undefined) {
 			return (undefined);
 			}
-		
+
 		var theMonth = new Date ();
 		theMonth.setSeconds (0);
 		theMonth.setMinutes (0);
@@ -978,13 +979,13 @@ function httpReadUrl (url, callback) {
 		theMonth.setDate (1);
 		theMonth.setMonth (monthnum);
 		theMonth.setFullYear (yearnum);
-		
+
 		for (var i = 0; i < theLog.chatLog.length; i++) {
 			if (utils.sameMonth (new Date (theLog.chatLog [i].when), theMonth)) {
 				jstruct [jstruct.length] = theLog.chatLog [i];
 				}
 			}
-		
+
 		return (jstruct);
 		}
 	function getChatLogIndex (nameChatLog) { //1/2/16 by DW
@@ -1022,10 +1023,10 @@ function httpReadUrl (url, callback) {
 		}
 	function writeIndividualFiles () { //10/5/15 by DW -- for possible future use
 		var indentlevel = 0;
-		function copyScalars (source, dest) { 
-			for (var x in source) { 
+		function copyScalars (source, dest) {
+			for (var x in source) {
 				var type, val = source [x];
-				if (val instanceof Date) { 
+				if (val instanceof Date) {
 					val = val.toString ();
 					}
 				type = typeof (val);
@@ -1082,10 +1083,10 @@ function httpReadUrl (url, callback) {
 			if (theLog.urlPublicFolder !== undefined) {
 				urlFeed = theLog.urlPublicFolder + s3RssPath;
 				if (urlFeed != theLog.urlFeed) {
-					theLog.urlFeed = urlFeed; 
+					theLog.urlFeed = urlFeed;
 					theLog.flDirty = true;
 					}
-				console.log ("buildChatLogRss: urlFeed == " + urlFeed); 
+				console.log ("buildChatLogRss: urlFeed == " + urlFeed);
 				}
 			callbacks.callPublishCallbacks (s3RssPath, xmltext, "text/xml", nameChatLog); //3/23/16 by DW
 			if (callback !== undefined) {
@@ -1097,7 +1098,7 @@ function httpReadUrl (url, callback) {
 		var theLog = findChatLog (nameChatLog), whenStartWrite = new Date ();
 		function doStats () { //1/20/16 by DW
 			var myStats = initChatLogStats (nameChatLog);
-			myStats.ctSecsLastWrite = utils.secondsSince (whenStartWrite); 
+			myStats.ctSecsLastWrite = utils.secondsSince (whenStartWrite);
 			myStats.ctWrites++;
 			myStats.whenLastWrite = whenStartWrite;
 			flStatsDirty = true;
@@ -1125,17 +1126,17 @@ function httpReadUrl (url, callback) {
 		else {
 			var chatlogpath = theLog.s3Path + fnameChatLog, prefspath = theLog.s3Path + fnameChatLogPrefs;
 			store.newObject (chatlogpath, utils.jsonStringify (theLog.chatLog), "application/json", undefined, function () {
-				
+
 				if (theLog.stats === undefined) { //3/9/16 by DW
 					theLog.stats = {
 						ctPrefsSaves: 0
 						};
 					}
-				
-				
+
+
 				var prefsStruct = {
 					prefs: theLog.prefs,
-					usersWhoCanPost: theLog.usersWhoCanPost, 
+					usersWhoCanPost: theLog.usersWhoCanPost,
 					renderingPrefs: theLog.renderingPrefs,
 					rssHeadElements: {
 						title: theLog.rssHeadElements.title,
@@ -1179,7 +1180,7 @@ function httpReadUrl (url, callback) {
 						log.urlJsonFile = log.urlPublicFolder + fnameChatLog; //3/9/16 by DW
 						store.getObject (prefspath, function (error, data) {
 							if ((!error) && (data != null)) {
-								
+
 								var jstruct = JSON.parse (data.Body);
 								if (jstruct.prefs !== undefined) {
 									log.prefs = jstruct.prefs;
@@ -1197,7 +1198,7 @@ function httpReadUrl (url, callback) {
 											log.rssHeadElements [x] = jstruct.rssHeadElements [x];
 											}
 										}
-									
+
 									if (jstruct.stats === undefined) {
 										log.stats = {
 											ctPrefsSaves: 0
@@ -1206,7 +1207,7 @@ function httpReadUrl (url, callback) {
 									else {
 										log.stats = jstruct.stats;
 										}
-									
+
 									}
 								else {
 									log.prefs = jstruct;
@@ -1220,23 +1221,23 @@ function httpReadUrl (url, callback) {
 									};
 								log.flDirty = true;
 								}
-							
+
 							//stats -- 1/20/16 by DW
 								var myStats = initChatLogStats (log.name);
 								myStats.ctSecsLastRead = utils.secondsSince (whenStartLoad); //1/20/16 by DW
 								myStats.ctReads++;
 								myStats.whenLastRead = whenStartLoad;
 								flStatsDirty = true;
-								
+
 								console.log ("loadChatLogs: log.name == " + log.name + ", myStats == " + utils.jsonStringify (myStats));
-							
+
 							loadNextLog (ix + 1);
 							});
 						});
 					}
 				}
 			loadNextLog (0);
-			
+
 			}
 		else {
 			callback ();
@@ -1250,7 +1251,7 @@ function httpReadUrl (url, callback) {
 		var metadata = {whenLastUpdate: new Date ().toString ()};
 		store.newObject (s3path, body, type, getS3Acl (false), function (error, data) {
 			if (error) {
-				callback (error);    
+				callback (error);
 				}
 			else {
 				metadata.url = theLog.urlPublicFolder + myRelpath;
@@ -1266,7 +1267,7 @@ function httpReadUrl (url, callback) {
 		}
 	function getChatlogForClient (nameChatLog) { //9/20/15 by DW
 		function initRenderingPrefs () { //3/30/16 by DW
-			if (theLog.renderingPrefs === undefined) { 
+			if (theLog.renderingPrefs === undefined) {
 				theLog.renderingPrefs = new Object ();
 				}
 			if (theLog.renderingPrefs.siteName === undefined) {
@@ -1292,14 +1293,14 @@ function httpReadUrl (url, callback) {
 		if (theLog === undefined) {
 			return (undefined);
 			}
-		
+
 		initRenderingPrefs (); //3/30/16 by DW
-		
+
 		var jstruct = new Object ();
 		jstruct.metadata = {
 			name: nameChatLog,
-			
-			usersWhoCanPost: theLog.usersWhoCanPost, 
+
+			usersWhoCanPost: theLog.usersWhoCanPost,
 			rssHeadElements: {
 				title: theLog.rssHeadElements.title,
 				link: theLog.rssHeadElements.link,
@@ -1307,8 +1308,8 @@ function httpReadUrl (url, callback) {
 				flInstantArticlesSupport: theLog.rssHeadElements.flInstantArticlesSupport //4/6/16 by DW
 				},
 			renderingPrefs: theLog.renderingPrefs, //2/21/16 by DW
-			urlFeed: theLog.urlFeed, 
-			
+			urlFeed: theLog.urlFeed,
+
 			server: {
 				productName: myProductName,
 				version: myVersion,
@@ -1316,7 +1317,7 @@ function httpReadUrl (url, callback) {
 				}
 			};
 		jstruct.chatLog = new Array ();
-		
+
 		if (theLog.chatLog.length > 0) { //6/1/16 by DW
 			var theMonth = theLog.chatLog [theLog.chatLog.length - 1].when; //the date of the most recent item in the chatlog
 			for (var i = theLog.chatLog.length - 1; i >= 0; i--) {
@@ -1329,7 +1330,7 @@ function httpReadUrl (url, callback) {
 					}
 				}
 			}
-		
+
 		return (jstruct);
 		}
 	function setChatLogMetadata (nameChatLog, metadata, callback) { //2/19/16 by DW
@@ -1394,7 +1395,7 @@ function httpReadUrl (url, callback) {
 	function chatLogEverySecond () {
 		if (flChatLogDirty) {
 			saveChatLog (nameDirtyChatLog);
-			flChatLogDirty = false; 
+			flChatLogDirty = false;
 			nameDirtyChatLog = undefined;
 			}
 		for (var i = 0; i < chatLogArray.length; i++) {
@@ -1407,14 +1408,14 @@ function httpReadUrl (url, callback) {
 		}
 //webhooks -- 8/28/15 by DW
 	var webhooks = {
-		incoming: {}, 
+		incoming: {},
 		outgoing: {}
 		};
 	var flWebhooksDirty = false, fnameWebhooks = "data/hooks.json";
 	var webhookNotEnabledError = "Can't create the webhook because the feature is not enabled on the server, or you are not authorized to create one."; //8/31/15 by DW
 	var webhookAccessTokenError = "Can't create a new webhook because the accessToken is not valid."; //8/31/15 by DW
 	var nameWebhookDefaultChannel = "default"; //we only have one channel, this is its name, can be overridden with a config.json setting -- 9/3/15 by DW
-	
+
 	function loadWebhooks (callback) {
 		store.getObject (s3PrivatePath + fnameWebhooks, function (error, data) {
 			if ((!error) && (data != null)) {
@@ -1456,7 +1457,7 @@ function httpReadUrl (url, callback) {
 					whenCreated: new Date (),
 					ctCalls: 0, whenLastCall: new Date (0)
 					};
-				
+
 				if (customName != undefined) {
 					newHook.customName = customName;
 					}
@@ -1468,7 +1469,7 @@ function httpReadUrl (url, callback) {
 					}
 				webhooks.incoming [id] = newHook;
 				urlwebhook = "http://" + domainIncomingWebhook + "/" + id;
-				callback (urlwebhook); 
+				callback (urlwebhook);
 				flWebhooksDirty = true;
 				return;
 				}
@@ -1494,7 +1495,7 @@ function httpReadUrl (url, callback) {
 					whenCreated: new Date (),
 					ctCalls: 0, whenLastCall: new Date (0)
 					};
-				
+
 				if (triggerWords !== undefined) {
 					newHook.triggerWords = triggerWords;
 					}
@@ -1512,7 +1513,7 @@ function httpReadUrl (url, callback) {
 					}
 				console.log ("newOutgoingHook: newHook == " + utils.jsonStringify (newHook));
 				webhooks.outgoing [id] = newHook;
-				callback (id); 
+				callback (id);
 				flWebhooksDirty = true;
 				return;
 				}
@@ -1533,7 +1534,7 @@ function httpReadUrl (url, callback) {
 				var ch = s [0];
 				if (ch == "<") {
 					var ix = s.indexOf (">");
-					if (ix >= 0) { 
+					if (ix >= 0) {
 						var part = s.slice (1, ix);
 						s = s.substr (ix + 1); //pop off the text betw angle brackets, including the angle brackets
 						outputstring += processPart (part);
@@ -1566,11 +1567,11 @@ function httpReadUrl (url, callback) {
 					if (jstruct.text != undefined) {
 						var screenName = "incoming-webhook-bot", iconUrl = undefined, iconEmoji = undefined, flTwitterName = true;
 						var channel = theHook.channel; //10/29/15 by DW -- we now have more than one chatlog per server
-						
+
 						theHook.ctCalls++;
 						theHook.whenLastCall = now;
 						flWebhooksDirty = true;
-						
+
 						//first, apply the defaults for the hook
 							if (theHook.customName !== undefined) {
 								screenName = theHook.customName;
@@ -1593,7 +1594,7 @@ function httpReadUrl (url, callback) {
 							if (jstruct.icon_emoji != undefined) {
 								iconEmoji = jstruct.icon_emoji;
 								}
-						
+
 						postChatMessage (screenName, channel, slackProcessText (jstruct.text),  undefined, undefined, iconUrl, iconEmoji, flTwitterName, function (id) {
 							callback (true, 200, "text/plain", "We love you Burt!");
 							});
@@ -1615,7 +1616,7 @@ function httpReadUrl (url, callback) {
 			team_id: 0,
 			team_domain: "",
 			channel_id: "",
-			channel_name: nameWebhookDefaultChannel, 
+			channel_name: nameWebhookDefaultChannel,
 			timestamp: Number (new Date ()) + "." + idMessage,
 			user_id: screenName,
 			user_name: screenName,
@@ -1747,7 +1748,7 @@ function httpReadUrl (url, callback) {
 				var obj = screenNameCache [i];
 				if ((obj.accessToken == accessToken) && (obj.accessTokenSecret == accessTokenSecret)) {
 					obj.ctAccesses++;
-					
+
 					if (checkWhitelist (obj.screenName)) { //11/18/14 by DW
 						callback (obj.screenName);
 						}
@@ -1761,8 +1762,8 @@ function httpReadUrl (url, callback) {
 			var twitter = newTwitter ();
 			twitter.verifyCredentials (accessToken, accessTokenSecret, function (error, data, response) {
 				if (error) {
-					callback (undefined);    
-					console.log ("getScreenName: error getting name. " + utils.jsonStringify (error)); 
+					callback (undefined);
+					console.log ("getScreenName: error getting name. " + utils.jsonStringify (error));
 					}
 				else {
 					var obj = new Object ();
@@ -1777,11 +1778,11 @@ function httpReadUrl (url, callback) {
 					else {
 						callback (undefined);
 						}
-					
+
 					}
 				});
 		}
-		
+
 	function deleteInScreenNameCache (accessToken, accessTokenSecret, callback) { //3/7/20M by DW
 		for (var i = 0; i < screenNameCache.length; i++) {
 			var obj = screenNameCache [i];
@@ -1804,7 +1805,7 @@ function httpReadUrl (url, callback) {
 					}
 				}
 			catch (tryError) {
-				console.log ("saveTweet error: " + tryError.message);    
+				console.log ("saveTweet error: " + tryError.message);
 				}
 			}
 		}
@@ -1816,12 +1817,12 @@ function httpReadUrl (url, callback) {
 		serverStats.ctTweets++;
 		serverStats.ctTweetsThisRun++;
 		serverStats.ctTweetsToday++;
-		
+
 		var obj = new Object ();
 		obj.text = tweetObject.text;
 		obj.id = tweetObject.id_str; //9/3/14 by DW
 		obj.user = tweetObject.user.screen_name;
-		
+
 		//obj.inReplyToId
 			{
 				var x = tweetObject.in_reply_to_status_id;
@@ -1830,10 +1831,10 @@ function httpReadUrl (url, callback) {
 					}
 				obj.inReplyToId = x;
 				}
-		
+
 		obj.when = now.toLocaleString ();
-		
-		obj.secs = utils.secondsSince (startTime); 
+
+		obj.secs = utils.secondsSince (startTime);
 		serverStats.recentTweets.unshift (obj);  //add at beginning of array
 		while (serverStats.recentTweets.length > maxrecentTweets) { //keep array within max size
 			serverStats.recentTweets.pop ();
@@ -1893,7 +1894,7 @@ function httpReadUrl (url, callback) {
 			else {
 				jstruct = JSON.parse (data.Body.toString ());
 				}
-			
+
 			for (var i = 0; i < jstruct.length; i++) {
 				if (jstruct [i].commenter == snCommenter) {
 					flnew = false;
@@ -1911,13 +1912,13 @@ function httpReadUrl (url, callback) {
 					};
 				jstructsub = jstruct [ixnew];
 				}
-			
-			
+
+
 			jstructsub.whenUpdated = now;
 			jstructsub.ctUpdates++;
 			jstructsub.urlOpmlFile = urlOpmlFile;
-			
-			
+
+
 			store.newObject (s3path, utils.jsonStringify (jstruct), "application/json", getS3Acl (flprivate), function (error, data) {
 				if (error) {
 					if (callback != undefined) {
@@ -1966,7 +1967,7 @@ function httpReadUrl (url, callback) {
 			add ("<title>Comments</title>");
 			add ("</head>"); indentlevel--;
 		add ("<body>"); indentlevel++;
-		store.listObjects (s3path, function (obj) { 
+		store.listObjects (s3path, function (obj) {
 			if (obj.flLastObject != undefined) {
 				add ("</body>"); indentlevel--;
 				add ("</opml>"); indentlevel--;
@@ -1989,7 +1990,7 @@ function httpReadUrl (url, callback) {
 //zip archive of user data -- 4/13/20 by DW
 	function getUserData (screenName, callback) { //4/14/20 by DW
 		if (flLocalFilesystem) {
-			const tmpfolder = "tmp/", archivefile = tmpfolder + screenName + ".zip"; 
+			const tmpfolder = "tmp/", archivefile = tmpfolder + screenName + ".zip";
 			utils.sureFilePath (archivefile, function () {
 				var theArchive = zip.createArchive (archivefile, function (err, data) {
 					if (callback !== undefined) {
@@ -2019,7 +2020,7 @@ function everyMinute () {
 function everySecond () {
 	if (!flScheduledEveryMinute) { //9/2/15 by DW
 		if (new Date ().getSeconds () == 0) {
-			setInterval (everyMinute, 60000); 
+			setInterval (everyMinute, 60000);
 			flScheduledEveryMinute = true;
 			everyMinute (); //it's the top of the minute, we have to do one now
 			}
@@ -2046,22 +2047,22 @@ function handleHttpRequest (httpRequest, httpResponse) {
 		var parsedUrl = urlpack.parse (httpRequest.url, true), now = new Date ();
 		var startTime = now, flStatsSaved = false, host, lowerhost, port, referrer;
 		var lowerpath = parsedUrl.pathname.toLowerCase (), clientIp = httpRequest.connection.remoteAddress;
-		
+
 		function doHttpReturn (code, type, s) { //8/28/15 by DW
 			httpResponse.writeHead (code, {"Content-Type": type, "Access-Control-Allow-Origin": "*"});
-			httpResponse.end (s);    
+			httpResponse.end (s);
 			}
 		function returnRedirect (url, code) {
 			if (code === undefined) {
 				code = 302;
 				}
 			httpResponse.writeHead (code, {"location": url, "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-			httpResponse.end (code + " REDIRECT");    
+			httpResponse.end (code + " REDIRECT");
 			}
-			
+
 		function addOurDataToReturnObject (returnObject) {
 			return; //disabled -- 2/21/15 by DW
-			
+
 			returnObject ["#smallpict"] = {
 				productname: myProductName,
 				version: myVersion
@@ -2095,21 +2096,21 @@ function handleHttpRequest (httpRequest, httpResponse) {
 			var sinceId = parsedUrl.query.since_id;
 			var twitter = newTwitter ();
 			var params = {user_id: userId, trim_user: "false"};
-			
+
 			if (sinceId != undefined) {
 				params.since_id = sinceId;
 				}
-			
+
 			twitter.getTimeline (whichTimeline, params, accessToken, accessTokenSecret, function (error, data, response) {
 				if (error) {
 					console.log ("getTwitterTimeline: error == " + error.message);
 					httpResponse.writeHead (500, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"}); //changed from 503 -- 6/20/14 by DW
-					httpResponse.end (utils.jsonStringify (error));    
+					httpResponse.end (utils.jsonStringify (error));
 					}
 				else {
 					httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
 					addOurDataToReturnObject (data);
-					httpResponse.end (utils.jsonStringify (data));    
+					httpResponse.end (utils.jsonStringify (data));
 					}
 				});
 			}
@@ -2168,16 +2169,16 @@ function handleHttpRequest (httpRequest, httpResponse) {
 			else {
 				plainReturn ();
 				}
-			
+
 			}
 		function errorResponse (error) {
 			httpResponse.writeHead (500, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-			httpResponse.end (utils.jsonStringify (error));    
+			httpResponse.end (utils.jsonStringify (error));
 			}
 		function dataResponse (data) { //6/21/14 by DW
 			httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
 			addOurDataToReturnObject (data);
-			httpResponse.end (utils.jsonStringify (data));    
+			httpResponse.end (utils.jsonStringify (data));
 			}
 		function returnZipFile (f) { //4/13/20 by DW
 			fs.readFile (f, function (err, data) {
@@ -2197,23 +2198,23 @@ function handleHttpRequest (httpRequest, httpResponse) {
 				var url = utils.stringPopLastField (urlHomePageContent, "/") + lowerpath;
 				console.log ("requestHomeFile: url == " + url);
 				request (url, function (err, response, body) {
-					callback (err, body);    
+					callback (err, body);
 					});
 				}
 			}
 		function requestEditor (editorname, callback) { //4/29/16 by DW
 			var editor = theEditors [editorname];
 			if (editor === undefined) {
-				callback ({message: "There is no editor named \"" + editorname + ".\""});    
+				callback ({message: "There is no editor named \"" + editorname + ".\""});
 				}
 			else {
 				if (editor.url === undefined) {
-					callback ({message: "The editor, \"" + editorname + ",\" doesn't have a url value."});    
+					callback ({message: "The editor, \"" + editorname + ",\" doesn't have a url value."});
 					}
 				else {
 					console.log ("requestEditor: editor.url == " + editor.url);
 					request (editor.url, function (err, response, body) {
-						callback (err, body);    
+						callback (err, body);
 						});
 					}
 				}
@@ -2221,16 +2222,16 @@ function handleHttpRequest (httpRequest, httpResponse) {
 		function requestPlugIn (plugInName, plugInStruct, typeString, callback) { //4/29/16 by DW
 			var plugin = plugInStruct [plugInName];
 			if (plugin === undefined) {
-				callback ({message: "There is no " + typeString + " named \"" + plugInName + ".\""});    
+				callback ({message: "There is no " + typeString + " named \"" + plugInName + ".\""});
 				}
 			else {
 				if (plugin.url === undefined) {
-					callback ({message: "The " + typeString + ", \"" + plugInName + ",\" doesn't have a url value."});    
+					callback ({message: "The " + typeString + ", \"" + plugInName + ",\" doesn't have a url value."});
 					}
 				else {
 					console.log ("requestEditor: plugin.url == " + plugin.url);
 					request (plugin.url, function (err, response, body) {
-						callback (err, body);    
+						callback (err, body);
 						});
 					}
 				}
@@ -2238,7 +2239,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 		function encode (s) {
 			return (encodeURIComponent (s));
 			}
-		
+
 		//stats
 			serverStats.ctHits++;
 			serverStats.ctHitsThisRun++;
@@ -2266,14 +2267,14 @@ function handleHttpRequest (httpRequest, httpResponse) {
 			if (referrer == undefined) {
 				referrer = "";
 				}
-			
+
 		//log the request
 			getDomainName (clientIp, function (theName) { //log the request
-				var freemem = gigabyteString (os.freemem ()); 
+				var freemem = gigabyteString (os.freemem ());
 				console.log (now.toLocaleTimeString () + " " + freemem + " " + httpRequest.method + " " + host + ":" + port + " " + lowerpath + " " + referrer + " " + theName);
 				});
-		
-		if (flEnabled) { 
+
+		if (flEnabled) {
 			names.serveThroughName (host, port, httpRequest, userDomain, function (flMatch, code, contentType, data) {
 				if (flMatch) {
 					httpResponse.writeHead (code, {"Content-Type": contentType, "Access-Control-Allow-Origin": "*"});
@@ -2291,300 +2292,329 @@ function handleHttpRequest (httpRequest, httpResponse) {
 								if (payload == undefined) {
 									payload = body;
 									}
-								incomingWebhookCall (host, lowerpath, payload, function (flMatch, code, contentType, data) {
-									if (flMatch) {
-										doHttpReturn (code, contentType, data);
+								switch (parsedUrl.pathname.toLowerCase ()) {
+									case "/proxytwitter":
+										var twitter = newTwitter ();
+										const jstruct = JSON.parse(payload);
+										if (jstruct.method === 'POST') {
+											twitter.oa.post(
+												jstruct.url,
+												jstruct.accessToken,
+												jstruct.accessTokenSecret,
+												jstruct.params,
+												function(error, data, response) {
+													dataResponse (JSON.parse(data));
+												}
+											);
+										} else {
+											twitter.oa.get(
+												jstruct.url,
+												jstruct.accessToken,
+												jstruct.accessTokenSecret,
+												function(error, data, response) {
+													dataResponse (JSON.parse(data));
+												}
+											);
 										}
-									else {
-										switch (parsedUrl.pathname.toLowerCase ()) {
-											case "/statuswithmedia": //6/30/14 by DW -- used in Little Card Editor
-												var params = {
-													url: "https://api.twitter.com/1.1/statuses/update_with_media.json",
-													oauth: {
-														consumer_key: twitterConsumerKey,
-														consumer_secret: twitterConsumerSecret,
-														token: parsedUrl.query.oauth_token,
-														token_secret: parsedUrl.query.oauth_token_secret
-														}
-													}
-												function requestCallback (error, response, body) {
-													if (error) {
-														errorResponse (error);
-														}
-													else {
-														saveTweet (body); //7/2/14 by DW
-														dataResponse (body);
-														console.log (utils.jsonStringify (body));    
-														}
-													}
-												var r = request.post (params, requestCallback);
-												var form = r.form ();
-												var buffer = new Buffer (body, "base64"); 
-												form.append ("status", parsedUrl.query.status);
-												form.append ("media[]", buffer, {filename: "picture.png"});
-												break;
-											case "/publishfile": //8/3/14 by DW
-												var twitter = newTwitter ();
-												var accessToken = parsedUrl.query.oauth_token;
-												var accessTokenSecret = parsedUrl.query.oauth_token_secret;
-												var relpath = parsedUrl.query.relpath;
-												var type = parsedUrl.query.type;
-												var flprivate = utils.getBoolean (parsedUrl.query.flprivate);
-												var flNotWhitelisted = false; //11/24/15 AM by DW
-												getScreenName (accessToken, accessTokenSecret, function (screenName) {
-													if (screenName === undefined) {
-														errorResponse ({message: "Can't save the file because the accessToken is not valid."});    
-														}
-													else {
-														var s3path = getS3UsersPath (flprivate) + screenName + "/" + relpath;
-														var metadata = {whenLastUpdate: new Date ().toString ()};
-														
-														
-														store.newObject (s3path, body, type, getS3Acl (flprivate), function (error, data) {
+										break;
+									default:
+										incomingWebhookCall (host, lowerpath, payload, function (flMatch, code, contentType, data) {
+											if (flMatch) {
+												doHttpReturn (code, contentType, data);
+												}
+											else {
+												switch (parsedUrl.pathname.toLowerCase ()) {
+													case "/statuswithmedia": //6/30/14 by DW -- used in Little Card Editor
+														var params = {
+															url: "https://api.twitter.com/1.1/statuses/update_with_media.json",
+															oauth: {
+																consumer_key: twitterConsumerKey,
+																consumer_secret: twitterConsumerSecret,
+																token: parsedUrl.query.oauth_token,
+																token_secret: parsedUrl.query.oauth_token_secret
+																}
+															}
+														function requestCallback (error, response, body) {
 															if (error) {
-																errorResponse (error);    
+																errorResponse (error);
 																}
 															else {
-																metadata.url = store.getUrl (s3path); //"http:/" + s3path;
-																dataResponse (metadata);
-																serverStats.ctFileSaves++;
-																statsChanged ();
-																if (!flprivate) { //12/15/14 by DW
-																	checkLongpollsForUrl (metadata.url, body);
-																	callbacks.callPublishCallbacks (relpath, body, type, screenName); //10/14/15 by DW
+																saveTweet (body); //7/2/14 by DW
+																dataResponse (body);
+																console.log (utils.jsonStringify (body));
+																}
+															}
+														var r = request.post (params, requestCallback);
+														var form = r.form ();
+														var buffer = new Buffer (body, "base64");
+														form.append ("status", parsedUrl.query.status);
+														form.append ("media[]", buffer, {filename: "picture.png"});
+														break;
+													case "/publishfile": //8/3/14 by DW
+														var twitter = newTwitter ();
+														var accessToken = parsedUrl.query.oauth_token;
+														var accessTokenSecret = parsedUrl.query.oauth_token_secret;
+														var relpath = parsedUrl.query.relpath;
+														var type = parsedUrl.query.type;
+														var flprivate = utils.getBoolean (parsedUrl.query.flprivate);
+														var flNotWhitelisted = false; //11/24/15 AM by DW
+														getScreenName (accessToken, accessTokenSecret, function (screenName) {
+															if (screenName === undefined) {
+																errorResponse ({message: "Can't save the file because the accessToken is not valid."});
+																}
+															else {
+																var s3path = getS3UsersPath (flprivate) + screenName + "/" + relpath;
+																var metadata = {whenLastUpdate: new Date ().toString ()};
+
+
+																store.newObject (s3path, body, type, getS3Acl (flprivate), function (error, data) {
+																	if (error) {
+																		errorResponse (error);
+																		}
+																	else {
+																		metadata.url = store.getUrl (s3path); //"http:/" + s3path;
+																		dataResponse (metadata);
+																		serverStats.ctFileSaves++;
+																		statsChanged ();
+																		if (!flprivate) { //12/15/14 by DW
+																			checkLongpollsForUrl (metadata.url, body);
+																			callbacks.callPublishCallbacks (relpath, body, type, screenName); //10/14/15 by DW
+																			}
+																		}
+																	}, metadata);
+																}
+															}, flNotWhitelisted);
+														break;
+													case "/publishchatlogfile": //1/6/16 by DW
+														var accessToken = parsedUrl.query.oauth_token;
+														var accessTokenSecret = parsedUrl.query.oauth_token_secret;
+														var relpath = parsedUrl.query.relpath;
+														var type = parsedUrl.query.type;
+														var nameChatLog = parsedUrl.query.chatLog;
+														var flprivate = false; //this endpoint is only used to publish, not for private storage
+														getScreenName (accessToken, accessTokenSecret, function (screenName) {
+															if (screenName === undefined) {
+																errorResponse ({message: "Can't publish the file because the accessToken is not valid."});
+																}
+															else {
+																var theLog = findChatLog (nameChatLog);
+																if (theLog.version == 1) { //special publish method to grandfather-in version 1 format chatlogs
+																	publishChatLogFileV1 (nameChatLog, screenName, relpath, type, body, function (err, metadata) {
+																		if (err) {
+																			errorResponse ({message: err.message});
+																			}
+																		else {
+																			dataResponse (metadata);
+																			}
+																		});
+																	}
+																else { //do exactly what we'd do if we weren't publishing for a chatlog
+																	var s3path = getS3UsersPath (flprivate) + screenName + "/" + relpath;
+																	var metadata = {whenLastUpdate: new Date ().toString ()};
+																	store.newObject (s3path, body, type, getS3Acl (flprivate), function (error, data) {
+																		if (error) {
+																			errorResponse (error);
+																			}
+																		else {
+																			metadata.url = store.getUrl (s3path); //"http:/" + s3path;
+																			dataResponse (metadata);
+																			serverStats.ctFileSaves++;
+																			statsChanged ();
+																			if (!flprivate) { //12/15/14 by DW
+																				checkLongpollsForUrl (metadata.url, body);
+																				callbacks.callPublishCallbacks (relpath, body, type, screenName); //10/14/15 by DW
+																				}
+																			}
+																		}, metadata);
 																	}
 																}
-															}, metadata);
-														}
-													}, flNotWhitelisted);
-												break;
-											case "/publishchatlogfile": //1/6/16 by DW
-												var accessToken = parsedUrl.query.oauth_token;
-												var accessTokenSecret = parsedUrl.query.oauth_token_secret;
-												var relpath = parsedUrl.query.relpath;
-												var type = parsedUrl.query.type;
-												var nameChatLog = parsedUrl.query.chatLog; 
-												var flprivate = false; //this endpoint is only used to publish, not for private storage
-												getScreenName (accessToken, accessTokenSecret, function (screenName) {
-													if (screenName === undefined) {
-														errorResponse ({message: "Can't publish the file because the accessToken is not valid."});    
-														}
-													else {
-														var theLog = findChatLog (nameChatLog);
-														if (theLog.version == 1) { //special publish method to grandfather-in version 1 format chatlogs
-															publishChatLogFileV1 (nameChatLog, screenName, relpath, type, body, function (err, metadata) {
-																if (err) {
-																	errorResponse ({message: err.message});    
+															});
+														break;
+													case "/chat": //8/25/15 by DW
+														if (flChatEnabled) {
+															var theQuery = parsedUrl.query; //4/28/16 by DW
+															if (body.length > 0) {
+																theQuery = qs.parse (body);
+																console.log ("/chat: the params came to us in the body, not on the URL.");
+																}
+
+															var accessToken = theQuery.oauth_token;
+															var accessTokenSecret = theQuery.oauth_token_secret;
+															var flNotWhitelisted = utils.getBoolean (theQuery.flNotWhitelisted);
+															var chatText = theQuery.text;
+															var payload = theQuery.payload;
+															var idMsgReplyingTo = theQuery.idMsgReplyingTo;
+															var nameChatLog = theQuery.chatLog; //10/26/15 by DW
+
+															flNotWhitelisted = false; //11/21/15 by DW
+															if (idMsgReplyingTo !== undefined) { //it's a reply -- 11/21/15 by DW
+																flNotWhitelisted = chatAnyoneCanReply (nameChatLog);
+																}
+
+															getScreenName (accessToken, accessTokenSecret, function (screenName) {
+																if (screenName === undefined) {
+																	errorResponse ({message: "Can't post the chat message because the accessToken is not valid."});
 																	}
 																else {
-																	dataResponse (metadata);
+																	console.log ("/chat: idMsgReplyingTo == " + idMsgReplyingTo);
+																	postChatMessage (screenName, nameChatLog, chatText, payload, idMsgReplyingTo, undefined, undefined, true, function (err, idMessage, itemToReturn) {
+																		if (err) {
+																			errorResponse ({message: err.message});
+																			}
+																		else {
+																			dataResponse ({id: idMessage, item: itemToReturn});
+																			}
+																		});
 																	}
-																});
-															}
-														else { //do exactly what we'd do if we weren't publishing for a chatlog
-															var s3path = getS3UsersPath (flprivate) + screenName + "/" + relpath;
-															var metadata = {whenLastUpdate: new Date ().toString ()};
-															store.newObject (s3path, body, type, getS3Acl (flprivate), function (error, data) {
-																if (error) {
-																	errorResponse (error);    
-																	}
-																else {
-																	metadata.url = store.getUrl (s3path); //"http:/" + s3path;
-																	dataResponse (metadata);
-																	serverStats.ctFileSaves++;
-																	statsChanged ();
-																	if (!flprivate) { //12/15/14 by DW
-																		checkLongpollsForUrl (metadata.url, body);
-																		callbacks.callPublishCallbacks (relpath, body, type, screenName); //10/14/15 by DW
-																		}
-																	}
-																}, metadata);
-															}
-														}
-													});
-												break;
-											case "/chat": //8/25/15 by DW
-												if (flChatEnabled) {
-													var theQuery = parsedUrl.query; //4/28/16 by DW
-													if (body.length > 0) { 
-														theQuery = qs.parse (body);
-														console.log ("/chat: the params came to us in the body, not on the URL.");
-														}
-													
-													var accessToken = theQuery.oauth_token;
-													var accessTokenSecret = theQuery.oauth_token_secret;
-													var flNotWhitelisted = utils.getBoolean (theQuery.flNotWhitelisted);
-													var chatText = theQuery.text;
-													var payload = theQuery.payload;
-													var idMsgReplyingTo = theQuery.idMsgReplyingTo;
-													var nameChatLog = theQuery.chatLog; //10/26/15 by DW
-													
-													flNotWhitelisted = false; //11/21/15 by DW
-													if (idMsgReplyingTo !== undefined) { //it's a reply -- 11/21/15 by DW
-														flNotWhitelisted = chatAnyoneCanReply (nameChatLog);
-														}
-													
-													getScreenName (accessToken, accessTokenSecret, function (screenName) {
-														if (screenName === undefined) {
-															errorResponse ({message: "Can't post the chat message because the accessToken is not valid."});    
+																}, flNotWhitelisted);
 															}
 														else {
-															console.log ("/chat: idMsgReplyingTo == " + idMsgReplyingTo);
-															postChatMessage (screenName, nameChatLog, chatText, payload, idMsgReplyingTo, undefined, undefined, true, function (err, idMessage, itemToReturn) {
-																if (err) {
-																	errorResponse ({message: err.message});    
+															errorResponse ({message: chatNotEnabledError});
+															}
+														break;
+													case "/editchatmessage": //9/11/15 by DW
+														if (flChatEnabled) {
+															var theQuery = parsedUrl.query; //4/28/16 by DW
+															if (body.length > 0) {
+																theQuery = qs.parse (body);
+																console.log ("/editchatmessage: the params came to us in the body, not on the URL.");
+																}
+															var accessToken = theQuery.oauth_token;
+															var accessTokenSecret = theQuery.oauth_token_secret;
+															var flNotWhitelisted = utils.getBoolean (theQuery.flNotWhitelisted);
+															var chatText = theQuery.text;
+															var idMessage = theQuery.id;
+															var payload = theQuery.payload;
+															var nameChatLog = theQuery.chatLog; //10/26/15 by DW
+
+															flNotWhitelisted = chatAnyoneCanReply (nameChatLog); //11/21/15 by DW -- we won't let you edit if you didn't create the message
+
+															getScreenName (accessToken, accessTokenSecret, function (screenName) {
+																if (screenName === undefined) {
+																	errorResponse ({message: "Can't post the chat message because the accessToken is not valid."});
 																	}
 																else {
-																	dataResponse ({id: idMessage, item: itemToReturn});
+																	editChatMessage (screenName, nameChatLog, chatText, payload, idMessage, function (err, msg, itemToReturn) {
+																		if (err) {
+																			errorResponse ({message: err.message});
+																			}
+																		else {
+																			dataResponse ({msg: msg, item: itemToReturn});
+																			}
+																		});
 																	}
-																});
-															}
-														}, flNotWhitelisted);
-													}
-												else {
-													errorResponse ({message: chatNotEnabledError});    
-													}
-												break;
-											case "/editchatmessage": //9/11/15 by DW
-												if (flChatEnabled) {
-													var theQuery = parsedUrl.query; //4/28/16 by DW
-													if (body.length > 0) { 
-														theQuery = qs.parse (body);
-														console.log ("/editchatmessage: the params came to us in the body, not on the URL.");
-														}
-													var accessToken = theQuery.oauth_token;
-													var accessTokenSecret = theQuery.oauth_token_secret;
-													var flNotWhitelisted = utils.getBoolean (theQuery.flNotWhitelisted);
-													var chatText = theQuery.text;
-													var idMessage = theQuery.id;
-													var payload = theQuery.payload;
-													var nameChatLog = theQuery.chatLog; //10/26/15 by DW
-													
-													flNotWhitelisted = chatAnyoneCanReply (nameChatLog); //11/21/15 by DW -- we won't let you edit if you didn't create the message
-													
-													getScreenName (accessToken, accessTokenSecret, function (screenName) {
-														if (screenName === undefined) {
-															errorResponse ({message: "Can't post the chat message because the accessToken is not valid."});    
+																}, flNotWhitelisted);
 															}
 														else {
-															editChatMessage (screenName, nameChatLog, chatText, payload, idMessage, function (err, msg, itemToReturn) {
-																if (err) {
-																	errorResponse ({message: err.message});    
+															errorResponse ({message: chatNotEnabledError});
+															}
+														break;
+													case "/setchatlogmetadata": //2/19/16 by DW
+														if (flChatEnabled) {
+															var accessToken = parsedUrl.query.oauth_token;
+															var accessTokenSecret = parsedUrl.query.oauth_token_secret;
+															var jsontext = parsedUrl.query.metadata;
+															getScreenName (accessToken, accessTokenSecret, function (screenName) {
+																if (screenName === undefined) {
+																	errorResponse ({message: "Can't set the metadata message because the accessToken is not valid."});
 																	}
 																else {
-																	dataResponse ({msg: msg, item: itemToReturn});
+																	setChatLogMetadata (screenName, jsontext, function (err, data) {
+																		if (err) {
+																			errorResponse ({message: err.message});
+																			}
+																		else {
+																			dataResponse ({metadata: data});
+																			}
+																		});
 																	}
 																});
-															}
-														}, flNotWhitelisted);
-													}
-												else {
-													errorResponse ({message: chatNotEnabledError});    
-													}
-												break;
-											case "/setchatlogmetadata": //2/19/16 by DW
-												if (flChatEnabled) {
-													var accessToken = parsedUrl.query.oauth_token;
-													var accessTokenSecret = parsedUrl.query.oauth_token_secret;
-													var jsontext = parsedUrl.query.metadata;
-													getScreenName (accessToken, accessTokenSecret, function (screenName) {
-														if (screenName === undefined) {
-															errorResponse ({message: "Can't set the metadata message because the accessToken is not valid."});    
 															}
 														else {
-															setChatLogMetadata (screenName, jsontext, function (err, data) {
-																if (err) {
-																	errorResponse ({message: err.message});    
+															errorResponse ({message: chatNotEnabledError});
+															}
+														break;
+													case "/publishchatloghomepage": //3/3/16 by DW
+														if (flChatEnabled) {
+															var accessToken = parsedUrl.query.oauth_token;
+															var accessTokenSecret = parsedUrl.query.oauth_token_secret;
+															var nameChatLog = parsedUrl.query.chatLog;
+															getScreenName (accessToken, accessTokenSecret, function (screenName) {
+																if (screenName === undefined) {
+																	errorResponse ({message: "Can't publish the home page because the accessToken is not valid."});
 																	}
 																else {
-																	dataResponse ({metadata: data});
+																	publishChatLogHomePage (nameChatLog, screenName, body, function (err, data) {
+																		if (err) {
+																			errorResponse ({message: err.message});
+																			}
+																		else {
+																			dataResponse (data);
+																			}
+																		});
 																	}
 																});
-															}
-														});
-													}
-												else {
-													errorResponse ({message: chatNotEnabledError});    
-													}
-												break;
-											case "/publishchatloghomepage": //3/3/16 by DW
-												if (flChatEnabled) {
-													var accessToken = parsedUrl.query.oauth_token;
-													var accessTokenSecret = parsedUrl.query.oauth_token_secret;
-													var nameChatLog = parsedUrl.query.chatLog; 
-													getScreenName (accessToken, accessTokenSecret, function (screenName) {
-														if (screenName === undefined) {
-															errorResponse ({message: "Can't publish the home page because the accessToken is not valid."});    
 															}
 														else {
-															publishChatLogHomePage (nameChatLog, screenName, body, function (err, data) {
-																if (err) {
-																	errorResponse ({message: err.message});    
-																	}
-																else {
-																	dataResponse (data);
-																	}
-																});
+															errorResponse ({message: chatNotEnabledError});
 															}
-														});
+														break;
+													default:
+														httpResponse.writeHead (200, {"Content-Type": "text/html"});
+														httpResponse.end ("post received, pathname == " + parsedUrl.pathname);
+														break;
 													}
-												else {
-													errorResponse ({message: chatNotEnabledError});    
-													}
-												break;
-											default: 
-												httpResponse.writeHead (200, {"Content-Type": "text/html"});
-												httpResponse.end ("post received, pathname == " + parsedUrl.pathname);
-												break;
-											}
+												}
+											});
 										}
-									});
 								});
 							break;
 						case "GET":
 							switch (lowerpath) {
 								case "/version":
 									httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-									httpResponse.end (myVersion);    
+									httpResponse.end (myVersion);
 									break;
 								case "/now":
 									httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-									httpResponse.end (now.toString ());    
+									httpResponse.end (now.toString ());
 									break;
-								case "/status": 
+								case "/status":
 									var myStatus = {
-										version: myVersion, 
-										now: now.toUTCString (), 
-										whenServerStart: serverStats.whenServerStart.toUTCString (), 
-										hits: serverStats.ctHits, 
+										version: myVersion,
+										now: now.toUTCString (),
+										whenServerStart: serverStats.whenServerStart.toUTCString (),
+										hits: serverStats.ctHits,
 										hitsToday: serverStats.ctHitsToday,
 										tweets: serverStats.ctTweets,
 										tweetsToday: serverStats.ctTweetsToday,
 										ctFileSaves: serverStats.ctFileSaves
 										};
 									httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-									httpResponse.end (utils.jsonStringify (myStatus));    
+									httpResponse.end (utils.jsonStringify (myStatus));
 									break;
-								case "/connect": 
-									var twitter = new twitterAPI ({
+								case "/connect":
+									var twitterConfig = {
 										consumerKey: twitterConsumerKey,
 										consumerSecret: twitterConsumerSecret,
 										callback: "http://" + myDomain + "/callbackFromTwitter?redirectUrl=" + encodeURIComponent (parsedUrl.query.redirect_url)
-										});
+										};
+									console.dir(twitterConfig);
+									var twitter = new twitterAPI (twitterConfig);
 									twitter.getRequestToken (function (error, requestToken, requestTokenSecret, results) {
 										if (error) {
 											errorResponse (error); //6/30/14 by DW
 											}
 										else {
 											saveRequestToken (requestToken, requestTokenSecret);
-											
+
 											var twitterOauthUrl = "https://twitter.com/oauth/authenticate?oauth_token=" + requestToken;
 											if (flForceTwitterLogin) { //2/19/16 by DW
 												twitterOauthUrl += "&force_login=true"; //https://dev.twitter.com/oauth/reference/get/oauth/authenticate
 												}
-											
+
 											httpResponse.writeHead (302, {"location": twitterOauthUrl});
-											httpResponse.end ("302 REDIRECT");    
+											httpResponse.end ("302 REDIRECT");
 											}
 										});
 									break;
@@ -2596,26 +2626,26 @@ function handleHttpRequest (httpRequest, httpResponse) {
 										});
 									break;
 								case "/callbackfromtwitter":
-									
+
 									var twitter = new twitterAPI ({
 										consumerKey: twitterConsumerKey,
 										consumerSecret: twitterConsumerSecret,
 										callback: undefined
 										});
-									
+
 									var myRequestToken = parsedUrl.query.oauth_token;
 									var myTokenSecret = findRequestToken (myRequestToken, true);
-									
-									
+
+
 									twitter.getAccessToken (myRequestToken, myTokenSecret, parsedUrl.query.oauth_verifier, function (error, accessToken, accessTokenSecret, results) {
 										if (error) {
 											console.log ("twitter.getAccessToken: error == " + error.message);
 											}
 										else {
 											var url = parsedUrl.query.redirectUrl + "?oauth_token=" + encodeURIComponent (accessToken) + "&oauth_token_secret=" + encodeURIComponent (accessTokenSecret) + "&user_id=" + encodeURIComponent (results.user_id) + "&screen_name=" + encodeURIComponent (results.screen_name);
-											
+
 											httpResponse.writeHead (302, {"location": url});
-											httpResponse.end ("302 REDIRECT");    
+											httpResponse.end ("302 REDIRECT");
 											}
 										});
 									break;
@@ -2632,34 +2662,34 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var inReplyToId = parsedUrl.query.in_reply_to_status_id;
 									var params = {status: twitterStatus, in_reply_to_status_id: inReplyToId};
 									var twitter = newTwitter ();
-									
+
 									if (tweetContainsBlockedTag (twitterStatus)) { //11/9/14 by DW
 										httpResponse.writeHead (500, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-										httpResponse.end ("Tweet contains a blocked tag.");    
+										httpResponse.end ("Tweet contains a blocked tag.");
 										}
 									else {
 										twitter.statuses ("update", params, accessToken, accessTokenSecret, function (error, data, response) {
 											if (error) {
 												httpResponse.writeHead (500, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-												httpResponse.end (utils.jsonStringify (error));    
+												httpResponse.end (utils.jsonStringify (error));
 												serverStats.ctTweetErrors++;
 												statsChanged ();
 												}
 											else {
 												httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
 												addOurDataToReturnObject (data);
-												httpResponse.end (utils.jsonStringify (data));    
+												httpResponse.end (utils.jsonStringify (data));
 												addTweetToLog (data, startTime);
 												saveTweet (data); //1/15/15 by DW
 												}
 											});
 										}
-									
+
 									break;
 								case "/getembedcode": //6/20/14 by DW
-									
+
 									var url = "https://api.twitter.com/1/statuses/oembed.json?id=" + parsedUrl.query.id;
-									
+
 									function addParam (name) {
 										if (parsedUrl.query [name] != undefined) {
 											url += "&" + name + "=" + parsedUrl.query [name];
@@ -2672,15 +2702,15 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									addParam ("align");
 									addParam ("related");
 									addParam ("lang");
-									
+
 									request (url, function (error, response, body) {
 										if (!error && (response.statusCode == 200)) {
 											httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-											httpResponse.end (body);    
+											httpResponse.end (body);
 											}
 										else {
 											httpResponse.writeHead (500, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-											httpResponse.end (utils.jsonStringify (error));    
+											httpResponse.end (utils.jsonStringify (error));
 											}
 										});
 									break;
@@ -2743,17 +2773,17 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var flNotWhitelisted = false; //11/24/15 AM by DW
 									getScreenName (accessToken, accessTokenSecret, function (screenName) {
 										if (screenName === undefined) {
-											errorResponse ({message: "Can't get the file because the accessToken is not valid."});    
+											errorResponse ({message: "Can't get the file because the accessToken is not valid."});
 											}
 										else {
 											var s3path = getS3UsersPath (flprivate) + screenName + "/" + relpath;
 											store.getObject (s3path, function (error, data) {
 												if (error) {
-													errorResponse (error);    
+													errorResponse (error);
 													}
 												else {
 													if (flIncludeBody) {
-														data.filedata = data.Body.toString (); 
+														data.filedata = data.Body.toString ();
 														}
 													delete data.Body;
 													dataResponse (data);
@@ -2770,7 +2800,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var flIncludeBody = utils.getBoolean (parsedUrl.query.flIncludeBody);
 									getScreenName (accessToken, accessTokenSecret, function (screenName) {
 										if (screenName === undefined) {
-											errorResponse ({message: "Can't get the file because the accessToken is not valid."});    
+											errorResponse ({message: "Can't get the file because the accessToken is not valid."});
 											}
 										else {
 											var s3path = getS3UsersPath (flprivate) + screenName + "/" + relpath;
@@ -2781,7 +2811,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 													}
 												else {
 													if (flIncludeBody) {
-														data.filedata = data.Body.toString (); 
+														data.filedata = data.Body.toString ();
 														}
 													delete data.Body;
 													jstruct = {data};
@@ -2797,17 +2827,17 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var shortUrl = parsedUrl.query.url;
 									getScreenName (accessToken, accessTokenSecret, function (screenName) {
 										if (screenName === undefined) {
-											errorResponse ({message: "Can't get the deref the URL because the accessToken is not valid."});    
+											errorResponse ({message: "Can't get the deref the URL because the accessToken is not valid."});
 											}
 										else {
 											var theRequest = {
-												method: "HEAD", 
-												url: shortUrl, 
+												method: "HEAD",
+												url: shortUrl,
 												followAllRedirects: true
 												};
 											request (theRequest, function (error, response) {
 												if (error) {
-													errorResponse ({message: "Can't get the deref the URL because there was an error making the HTTP request."});    
+													errorResponse ({message: "Can't get the deref the URL because there was an error making the HTTP request."});
 													}
 												else {
 													var theResponse = {
@@ -2825,7 +2855,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var apiUrl = "http://api.bitly.com/v3/shorten";
 									var apiKey = bitlyApiKey, username = bitlyApiUsername; //1/17/15 by DW -- removed hard-coded constants
 									if ((apiKey == undefined) || (username == undefined)) {
-										errorResponse ({message: "Can't shorten the URL because the server is not configured to shorten URLs."});    
+										errorResponse ({message: "Can't shorten the URL because the server is not configured to shorten URLs."});
 										}
 									else {
 										function encode (s) {
@@ -2839,7 +2869,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 											if (!error && (response.statusCode == 200)) {
 												var jstruct = JSON.parse (body);
 												if (jstruct.status_code != 200) {
-													errorResponse ({message: "Can't shorten the URL because bitly returned an error code of " + jstruct.status_code + "."});    
+													errorResponse ({message: "Can't shorten the URL because bitly returned an error code of " + jstruct.status_code + "."});
 													}
 												else {
 													var theResponse = {
@@ -2849,8 +2879,8 @@ function handleHttpRequest (httpRequest, httpResponse) {
 													dataResponse (theResponse);
 													}
 												}
-											else { 
-												errorResponse ({message: "Can't shorten the URL because there was an error making the HTTP request."});    
+											else {
+												errorResponse ({message: "Can't shorten the URL because there was an error making the HTTP request."});
 												}
 											});
 										}
@@ -2862,13 +2892,13 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var ctposts = 25; //parsedUrl.query.ctposts;
 									getScreenName (accessToken, accessTokenSecret, function (screenName) {
 										if (screenName === undefined) {
-											errorResponse ({message: "Can't get recent posts because the accessToken is not valid."});    
+											errorResponse ({message: "Can't get recent posts because the accessToken is not valid."});
 											}
 										else {
 											var s3path = getS3UsersPath (true) + screenName + "/";
 											store.getObject (s3path + "postsData.json", function (error, data) {
 												if (error) {
-													errorResponse (error);    
+													errorResponse (error);
 													}
 												else {
 													var postsData = JSON.parse (data.Body.toString ());
@@ -2876,13 +2906,13 @@ function handleHttpRequest (httpRequest, httpResponse) {
 													var postsArray = [], ct = 0;
 													function getOnePost (postnum) {
 														var filepath = s3path + "posts/" + utils.padWithZeros (postnum, 7) + ".json";
-														
-														
+
+
 														store.getObject (filepath, function (error, data) {
 															if (!error) {
 																var jstruct = JSON.parse (data.Body.toString ());
-																
-																
+
+
 																postsArray [postsArray.length] = jstruct;
 																if ((++ct < ctposts) && (postnum > 0)) {
 																	getOnePost (postnum - 1);
@@ -2909,12 +2939,12 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									twitter.help ("configuration", params, accessToken, accessTokenSecret, function (error, data, response) {
 										if (error) {
 											httpResponse.writeHead (500, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-											httpResponse.end (error.message);    
+											httpResponse.end (error.message);
 											}
 										else {
 											httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
 											addOurDataToReturnObject (data);
-											httpResponse.end (utils.jsonStringify (data));    
+											httpResponse.end (utils.jsonStringify (data));
 											}
 										});
 									break;
@@ -2923,7 +2953,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									break;
 								case "/stats": //12/16/14 by DW
 									httpResponse.writeHead (200, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-									httpResponse.end (utils.jsonStringify (serverStats));    
+									httpResponse.end (utils.jsonStringify (serverStats));
 									break;
 								case "/getfilelist": //12/21/14 by DW
 									var accessToken = parsedUrl.query.oauth_token;
@@ -2931,15 +2961,15 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var flprivate = utils.getBoolean (parsedUrl.query.flprivate);
 									getScreenName (accessToken, accessTokenSecret, function (screenName) {
 										if (screenName === undefined) {
-											errorResponse ({message: "Can't get the file list because the accessToken is not valid."});    
+											errorResponse ({message: "Can't get the file list because the accessToken is not valid."});
 											}
 										else {
 											var s3path = getS3UsersPath (flprivate) + screenName + "/";
 											getUserFileList (s3path, function (error, theList) {
 												if (error) {
-													errorResponse (error);    
+													errorResponse (error);
 													}
-												else { 
+												else {
 													var returnedList = new Array (); //return a processed array -- 3/5/15 by DW
 													for (var i = 0; i < theList.length; i++) {
 														var obj = new Object (), s3obj = theList [i];
@@ -2969,17 +2999,17 @@ function handleHttpRequest (httpRequest, httpResponse) {
 												});
 											}
 										});
-									break; 
+									break;
 								case "/api.js": //1/20/15 by DW
 									httpResponse.writeHead (200, {"Content-Type": "application/javascript", "Access-Control-Allow-Origin": "*"});
 									fs.readFile ("api.js", function (err, data) {
 										if (err) {
 											httpResponse.writeHead (500, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-											httpResponse.end (err.message);    
+											httpResponse.end (err.message);
 											}
 										else {
 											httpResponse.writeHead (200, {"Content-Type": "application/javascript", "Access-Control-Allow-Origin": "*"});
-											httpResponse.end (data.toString ());    
+											httpResponse.end (data.toString ());
 											}
 										});
 									break;
@@ -2996,7 +3026,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 												dataResponse (jstruct);
 												}
 											else {
-												errorResponse (error);    
+												errorResponse (error);
 												}
 											});
 										}, flNotWhitelisted);
@@ -3018,7 +3048,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 													dataResponse (new Array ());
 													}
 												else {
-													errorResponse (error);    
+													errorResponse (error);
 													}
 												}
 											});
@@ -3030,13 +3060,13 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									console.log ("/opmlcomments: s3path == " + s3path);
 									getUserCommentsOpml (s3path, function (opmltext) {
 										httpResponse.writeHead (200, {"Content-Type": "text/xml", "Access-Control-Allow-Origin": "*"});
-										httpResponse.end (opmltext);    
+										httpResponse.end (opmltext);
 										});
-									
-									
-									
-									
-									
+
+
+
+
+
 									break;
 								case "/isnameavailable": //7/12/15 by DW
 									names.isNameAvailable (parsedUrl.query.name, function (theName, flAvailable, msg) {
@@ -3074,7 +3104,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var name = parsedUrl.query.chatLog;
 									var jstruct = getChatlogForClient (name);
 									if (jstruct === undefined) {
-										errorResponse ({message: "Can't get the chatlog named \"" + name + "\" because it doesn't exist."});    
+										errorResponse ({message: "Can't get the chatlog named \"" + name + "\" because it doesn't exist."});
 										}
 									else {
 										dataResponse (jstruct);
@@ -3096,7 +3126,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var name = parsedUrl.query.chatLog;
 									var jstruct = getChatLogIndex (name);
 									if (jstruct === undefined) {
-										errorResponse ({message: "Can't get the index for the chatlog named \"" + name + "\" because it doesn't exist."});    
+										errorResponse ({message: "Can't get the index for the chatlog named \"" + name + "\" because it doesn't exist."});
 										}
 									else {
 										dataResponse (jstruct);
@@ -3114,7 +3144,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 												});
 											}
 										else {
-											errorResponse ({message: "Can't get the message because it isn't in the server chat log."});    
+											errorResponse ({message: "Can't get the message because it isn't in the server chat log."});
 											}
 										});
 									break;
@@ -3134,11 +3164,11 @@ function handleHttpRequest (httpRequest, httpResponse) {
 													});
 												}
 											else {
-												errorResponse ({message: webhookNotEnabledError});    
+												errorResponse ({message: webhookNotEnabledError});
 												}
 											}
 										else {
-											errorResponse ({message: "Can't 'like' the message because your accessToken isn't valid."});    
+											errorResponse ({message: "Can't 'like' the message because your accessToken isn't valid."});
 											}
 										}, flNotWhitelisted);
 									break;
@@ -3173,7 +3203,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var customEmoji = parsedUrl.query.customemoji;
 									getScreenName (accessToken, accessTokenSecret, function (screenName) {
 										if (screenName === undefined) {
-											errorResponse ({message: webhookAccessTokenError});    
+											errorResponse ({message: webhookAccessTokenError});
 											}
 										else {
 											if ((flChatEnabled) && (domainIncomingWebhook !== undefined) && (okToCreateHook (screenName))) {
@@ -3182,7 +3212,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 													});
 												}
 											else {
-												errorResponse ({message: webhookNotEnabledError});    
+												errorResponse ({message: webhookNotEnabledError});
 												}
 											}
 										});
@@ -3199,7 +3229,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									var customEmoji = parsedUrl.query.customemoji;
 									getScreenName (accessToken, accessTokenSecret, function (screenName) {
 										if (screenName === undefined) {
-											errorResponse ({message: webhookAccessTokenError});    
+											errorResponse ({message: webhookAccessTokenError});
 											}
 										else {
 											if ((flChatEnabled) && (okToCreateHook (screenName))) {
@@ -3208,7 +3238,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 													});
 												}
 											else {
-												errorResponse ({message: webhookNotEnabledError});    
+												errorResponse ({message: webhookNotEnabledError});
 												}
 											}
 										});
@@ -3288,8 +3318,8 @@ function handleHttpRequest (httpRequest, httpResponse) {
 								case "/getmonthchatmessages": //5/31/16 by DW
 									var monthnum = parsedUrl.query.monthnum;
 									var yearnum = parsedUrl.query.yearnum;
-									var nameChatLog = parsedUrl.query.chatLog; 
-									
+									var nameChatLog = parsedUrl.query.chatLog;
+
 									var jstruct = getMonthChatLogPosts (nameChatLog, monthnum, yearnum);
 									if (jstruct === undefined) {
 										errorResponse ({message: "Can't get chatlog items for month # " + monthnum + " in " + yearnum + " because the chatlog doesn't exist or the posts don't."});
@@ -3297,12 +3327,12 @@ function handleHttpRequest (httpRequest, httpResponse) {
 									else {
 										dataResponse (jstruct);
 										}
-									
+
 									break;
 								case "/myfiles": //4/14/20 by DW
 									getScreenName (parsedUrl.query.oauth_token, parsedUrl.query.oauth_token_secret, function (screenName) {
 										if (screenName === undefined) {
-											errorResponse ({message: "Can't get the user's data because the access token is not valid."});    
+											errorResponse ({message: "Can't get the user's data because the access token is not valid."});
 											}
 										else {
 											getUserData (screenName, function (err, zipfile) {
@@ -3319,14 +3349,14 @@ function handleHttpRequest (httpRequest, httpResponse) {
 								default:
 									var path = parsedUrl.pathname;
 									path = decodeURI (path); //6/28/16 by DW
-									
+
 									if (theDomainMap [lowerhost] !== undefined) {
 										path = theDomainMap [lowerhost] + path;
 										}
 									else {
 										if (!utils.getBoolean (parsedUrl.query.noredirect)) { //7/17/16 by DW, noredirect param not specified or not true
 											for (var x in theDomainMap) {
-												if (utils.beginsWith (path, theDomainMap [x])) { 
+												if (utils.beginsWith (path, theDomainMap [x])) {
 													var addport = "";
 													if (flUsePortInRedirect && (port != 80)) { //2/27/18 by DW
 														addport = ":" + port;
@@ -3338,16 +3368,16 @@ function handleHttpRequest (httpRequest, httpResponse) {
 												}
 											}
 										}
-									
+
 									if ((path == "/") && (urlHomePageContent !== undefined)) { //10/11/15 by DW
 										request (urlHomePageContent, function (error, response, body) {
 											if (error) {
 												httpResponse.writeHead (500, {"Content-Type": "text/plain"});
-												httpResponse.end ("Error accessing home page content: " + error.message);    
+												httpResponse.end ("Error accessing home page content: " + error.message);
 												}
 											else {
 												httpResponse.writeHead (response.statusCode, {"Content-Type": response.headers ["content-type"]});
-												httpResponse.end (body);    
+												httpResponse.end (body);
 												}
 											});
 										}
@@ -3364,7 +3394,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 															return;
 														}
 													}
-												
+
 												if (code == 500) { //6/25/16 by DW
 													try {
 														var jstruct = JSON.parse (bodytext);
@@ -3378,7 +3408,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 													catch (err) {
 														}
 													}
-												
+
 												headers ["Access-Control-Allow-Origin"] = "*"; //5/29/16 by DW
 												httpResponse.writeHead (code, headers);
 												httpResponse.end (bodytext);
@@ -3386,7 +3416,7 @@ function handleHttpRequest (httpRequest, httpResponse) {
 											}
 										else {
 											httpResponse.writeHead (500, {"Content-Type": "text/plain"});
-											httpResponse.end ("The file name contains illegal characters.");    
+											httpResponse.end ("The file name contains illegal characters.");
 											}
 										}
 									break;
@@ -3398,12 +3428,12 @@ function handleHttpRequest (httpRequest, httpResponse) {
 			}
 		else {
 			httpResponse.writeHead (503, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-			httpResponse.end ("Can't process the request because the server is disabled.");    
+			httpResponse.end ("Can't process the request because the server is disabled.");
 			}
 		}
 	catch (tryError) {
 		httpResponse.writeHead (500, {"Content-Type": "text/plain", "Access-Control-Allow-Origin": "*"});
-		httpResponse.end (tryError.message);    
+		httpResponse.end (tryError.message);
 		}
 	}
 function loadConfig (callback) { //5/8/15 by DW
@@ -3438,7 +3468,7 @@ function loadConfig (callback) { //5/8/15 by DW
 				}
 			if (config.userWhitelist !== undefined) { //3/30/16 by DW
 				userWhitelist = config.userWhitelist;
-				flWhitelist = true; 
+				flWhitelist = true;
 				}
 			if (config.longPollTimeoutSecs !== undefined) {
 				longPollTimeoutSecs = config.longPollTimeoutSecs;
@@ -3460,7 +3490,7 @@ function loadConfig (callback) { //5/8/15 by DW
 					console.log ("Can't use config.where because config.where.publicPath and/or config.where.privatePath were not specified.");
 					}
 				else {
-					flLocalFilesystem = utils.getBoolean (config.where.flUseLocalFilesystem); 
+					flLocalFilesystem = utils.getBoolean (config.where.flUseLocalFilesystem);
 					s3Path = config.where.publicPath;
 					s3PrivatePath = config.where.privatePath;
 					}
@@ -3537,7 +3567,7 @@ function loadConfig (callback) { //5/8/15 by DW
 			if (config.flUsePortInRedirect !== undefined) { //2/27/18 by DW
 				flUsePortInRedirect = config.flUsePortInRedirect;
 				}
-			
+
 			//give values to optional params -- 3/24/16 by DW
 				if ((basePublicUrl === undefined) && (myDomain !== undefined)) {
 					basePublicUrl = "http://" + myDomain + "/";
@@ -3552,7 +3582,7 @@ function loadConfig (callback) { //5/8/15 by DW
 							}
 						}
 					}
-			
+
 			store.init (flLocalFilesystem, s3Path, s3PrivatePath, basePublicUrl);
 			}
 		if (callback !== undefined) {
@@ -3570,9 +3600,9 @@ function startup () {
 		}
 	loadConfig (function () {
 		myPort = process.env.PORT || myPort; //9/19/19 by DW
-		
+
 		console.log ("\n" + myProductName + " v" + myVersion + " running on port " + myPort + ", freemem = " + gigabyteString (os.freemem ()) + ", urlWhitelist == " + urlWhitelist + "\n");
-		
+
 		if (notDefined (myDomain, "myDomain")) {
 			return;
 			}
@@ -3591,21 +3621,21 @@ function startup () {
 		if (notDefined (myPort, "myPort")) {
 			return;
 			}
-		
+
 		if (flEnabled === undefined) { //11/16/14 by DW
 			flEnabled = true;
 			}
 		else {
 			flEnabled = utils.getBoolean (flEnabled);
 			}
-		
+
 		//a little defensive driving -- 5/8/15; 6:16:09 PM by DW
 			if (urlWhitelist !== undefined) {
 				if (urlWhitelist.length == 0) { //yes, this happens
-					urlWhitelist = undefined; 
+					urlWhitelist = undefined;
 					}
 				}
-		
+
 		utils.getFileModDate (fnameApp, function (appModDate) { //set origAppModDate -- 8/26/15 by DW
 			origAppModDate = appModDate;
 			loadServerStats (function () {
@@ -3626,7 +3656,7 @@ function startup () {
 										console.log ("startup: websockets port is " + websocketPort);
 										webSocketStartup (websocketPort); //11/29/15 by DW
 										}
-									setInterval (everySecond, 1000); 
+									setInterval (everySecond, 1000);
 									});
 								});
 							});
